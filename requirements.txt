@@ -5,6 +5,13 @@ uvloop
 psutil
 boto3
 botocore
+twilio
+vonage
+sendgrid
+aws
+mysql-connector-python
+stripe
+psycopg2-binary
 colorama
 rich
 tqdm
